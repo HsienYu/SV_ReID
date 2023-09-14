@@ -81,12 +81,12 @@ def main():
     args = parse_arguments()
     frame_width, frame_height = args.webcam_resolution
 
-    cap = cv2.VideoCapture(1)
+    cap = cv2.VideoCapture(0)
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, frame_width)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, frame_height)
 
     model = YOLO("./model/yolov8n.pt")
-    model.to('mps')
+    model.to('cuda:0')
 
     tracker = sv.ByteTrack()
 
@@ -142,48 +142,10 @@ def main():
 
         return annotated_frame
 
-    # box_annotator = sv.BoxAnnotator(
-    #     thickness=2,
-    #     text_thickness=2,
-    #     text_scale=1,
-    #     color=COLORS
-    # )
-    # zone_in_polygon = (
-    #     ZONE_IN_POLYGONS * np.array(args.webcam_resolution)).astype(int)
-
-    # zone = sv.PolygonZone(polygon=zone_in_polygon,
-    #                       frame_resolution_wh=tuple(args.webcam_resolution))
-    # zone_annotator = sv.PolygonZoneAnnotator(
-    #     zone=zone,
-    #     color=sv.Color.red(),
-    #     thickness=2,
-    #     text_thickness=4,
-    #     text_scale=2
-    # )
 
     while cap.isOpened():
         ret, frame = cap.read()
 
-        # results = model(frame, agnostic_nms=True, classes=0,
-        #                 conf=0.3, iou=0.7)[0]
-
-        # detections = sv.Detections.from_ultralytics(results)
-        # detections = tracker.update_with_detections(detections)
-
-        # labels = [
-        #     f"#{tracker_id} {model.model.names[class_id]}"
-        #     for _, _, _, class_id, tracker_id in detections
-        # ]
-
-        # frame = box_annotator.annotate(
-        #     scene=frame,
-        #     detections=detections,
-        #     labels=labels
-        # )
-
-        # zone.trigger(detections=detections)
-
-        # frame = zone_annotator.annotate(scene=frame)
 
         results = model(
             frame, verbose=True, agnostic_nms=True, classes=0,
@@ -210,8 +172,11 @@ def main():
 
         cv2.imshow("SV_ReID", annotate_frame(frame, detections))
 
-        if (cv2.waitKey(30) == 27):
+        if cv2.waitKey(1) & 0xFF == ord('q'):
             break
+    cap.release()
+    cv2.destroyAllWindows()
+
 
 
 if __name__ == "__main__":
