@@ -6,6 +6,8 @@ import numpy as np
 import supervision as sv
 from ultralytics import YOLO
 
+from pythonosc import udp_client
+
 COLORS = sv.ColorPalette.default()
 
 ZONE_IN_POLYGONS = [
@@ -105,6 +107,10 @@ def main():
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, frame_width)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, frame_height)
 
+    OSC_IP = "10.0.0.32"
+    OSC_PORT = 12345
+    osc_client = udp_client.SimpleUDPClient(OSC_IP, OSC_PORT)
+
     model = YOLO("./model/yolov8l.pt")
     model.to('mps')
 
@@ -168,7 +174,6 @@ def main():
 
     while cap.isOpened():
         ret, frame = cap.read()
-
         results = model(
             frame, verbose=True, agnostic_nms=True, classes=0,
             conf=0.3, iou=0.7
@@ -185,11 +190,19 @@ def main():
                 detections=detections)]
             print(f'Zone in: {detections_in_zone.tracker_id}')
 
+            if detections_in_zone.tracker_id:
+                osc_client.send_message(
+                    "/erase", 1)
+
             detections_in_zones.append(detections_in_zone)
 
             detections_out_zone = detections[zone_out.trigger(
                 detections=detections)]
             print(f'Zone out: {detections_out_zone.tracker_id}')
+
+            if detections_out_zone.tracker_id:
+                osc_client.send_message(
+                    "/erase", 1)
 
             detections_out_zones.append(detections_out_zone)
 
