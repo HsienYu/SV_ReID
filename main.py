@@ -32,22 +32,42 @@ class DetectionsManager:
         detections_in_zones: List[sv.Detections],
         detections_out_zones: List[sv.Detections],
     ) -> sv.Detections:
+        print(f'Detections all: {detections_all}')
         for zone_in_id, detections_in_zone in enumerate(detections_in_zones):
-            for tracker_id in detections_in_zone.tracker_id:
-                self.tracker_id_to_zone_id.setdefault(tracker_id, zone_in_id)
+            assert hasattr(detections_in_zone, "tracker_id"), (
+                "Detections must have tracker_id attribute"
+            )
+            if detections_in_zone.tracker_id is not None:
+                for tracker_id in detections_in_zone.tracker_id:
+                    self.tracker_id_to_zone_id.setdefault(
+                        tracker_id, zone_in_id)
+                    # self.tracker_id_to_zone_id[tracker_id] = zone_in_id
 
         for zone_out_id, detections_out_zone in enumerate(detections_out_zones):
-            for tracker_id in detections_out_zone.tracker_id:
-                if tracker_id in self.tracker_id_to_zone_id:
-                    zone_in_id = self.tracker_id_to_zone_id[tracker_id]
-                    self.counts.setdefault(zone_out_id, {})
-                    self.counts[zone_out_id].setdefault(zone_in_id, set())
-                    self.counts[zone_out_id][zone_in_id].add(tracker_id)
+            assert hasattr(detections_out_zone, "tracker_id"), (
+                "Detections must have tracker_id attribute"
+            )
+            if detections_out_zone.tracker_id is not None:
+                for tracker_id in detections_out_zone.tracker_id:
+                    if tracker_id in self.tracker_id_to_zone_id:
+                        zone_in_id = self.tracker_id_to_zone_id[tracker_id]
+                        self.counts.setdefault(zone_out_id, {})
+                        # self.counts[zone_out_id] = {}
+                        self.counts[zone_out_id].setdefault(zone_in_id, set())
+                        self.counts[zone_out_id][zone_in_id].add(tracker_id)
+                        # self.counts[zone_out_id][zone_in_id] = {tracker_id}
 
-        detections_all.class_id = np.vectorize(
-            lambda x: self.tracker_id_to_zone_id.get(x, -1)
-        )(detections_all.tracker_id)
-        return detections_all[detections_all.class_id != -1]
+        if not np.any(detections_all.xyxy):
+            return None
+        else:
+            detections_all.class_id = np.vectorize(
+                lambda x: self.tracker_id_to_zone_id.get(x, -1)
+            )(detections_all.tracker_id)
+            return detections_all[detections_all.class_id != -1]
+        # detections_all.class_id = [
+        #     self.tracker_id_to_zone_id.get(k) for k in detections_all.tracker_id if k in self.tracker_id_to_zone_id
+        # ]
+        # return detections_all
 
 
 def initiate_polygon_zones(
@@ -81,12 +101,12 @@ def main():
     args = parse_arguments()
     frame_width, frame_height = args.webcam_resolution
 
-    cap = cv2.VideoCapture(0)
+    cap = cv2.VideoCapture(1)
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, frame_width)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, frame_height)
 
-    model = YOLO("./model/yolov8n.pt")
-    model.to('cuda:0')
+    model = YOLO("./model/yolov8l.pt")
+    model.to('mps')
 
     tracker = sv.ByteTrack()
 
@@ -117,7 +137,11 @@ def main():
                 annotated_frame, zone_out.polygon, COLORS.colors[i]
             )
 
-        labels = [f"#{tracker_id}" for tracker_id in detections.tracker_id]
+        labels = [
+            f"#{tracker_id}" for tracker_id in detections.tracker_id]
+        # labels = [
+        #     f"#{tracker_id}" for tracker_id in detections.tracker_id
+        # ] if detections.tracker_id is not None else []
         annotated_frame = trace_annotator.annotate(
             annotated_frame, detections)
         annotated_frame = box_annotator.annotate(
@@ -142,16 +166,14 @@ def main():
 
         return annotated_frame
 
-
     while cap.isOpened():
         ret, frame = cap.read()
-
 
         results = model(
             frame, verbose=True, agnostic_nms=True, classes=0,
             conf=0.3, iou=0.7
         )[0]
-        detections = sv.Detections.from_ultralytics(results)
+        detections = sv.Detections.from_yolov8(results)
         detections.class_id = np.zeros(len(detections))
         detections = tracker.update_with_detections(detections)
 
@@ -161,22 +183,32 @@ def main():
         for i, (zone_in, zone_out) in enumerate(zip(zones_in, zones_out)):
             detections_in_zone = detections[zone_in.trigger(
                 detections=detections)]
+            print(f'Zone in: {detections_in_zone.tracker_id}')
+
             detections_in_zones.append(detections_in_zone)
+
             detections_out_zone = detections[zone_out.trigger(
                 detections=detections)]
+            print(f'Zone out: {detections_out_zone.tracker_id}')
+
             detections_out_zones.append(detections_out_zone)
 
         detections = detections_manager.update(
             detections, detections_in_zones, detections_out_zones
         )
 
-        cv2.imshow("SV_ReID", annotate_frame(frame, detections))
+        print(f'Zone ins: {detections_in_zones[0].tracker_id}')
+
+        print(f'Zone outs: {detections_out_zones[0].tracker_id}')
+
+        if detections is not None:
+            cv2.imshow("SV_ReID", annotate_frame(frame, detections))
+        # cv2.imshow("SV_ReID", annotate_frame(frame, detections))
 
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
     cap.release()
     cv2.destroyAllWindows()
-
 
 
 if __name__ == "__main__":
