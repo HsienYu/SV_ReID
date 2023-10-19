@@ -12,15 +12,16 @@ COLORS = sv.ColorPalette.default()
 
 ZONE_IN_POLYGONS = [
     np.array([
-        [145, 178], [141, 550], [393, 546], [389, 166]
+    [623, 580],[735, 580],[735, 492],[627, 492]
     ])
 ]
 
 ZONE_OUT_POLYGONS = [
     np.array([
-        [845, 154], [841, 546], [1125, 546], [1125, 150]
+    [50, 606],[46, 662],[1266, 690],[1262, 658]
     ])
 ]
+ 
 
 
 class DetectionsManager:
@@ -90,7 +91,7 @@ def initiate_polygon_zones(
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="YOLO ByteTrack")
     parser.add_argument(
-        "--webcam-resolution",
+        "--res",
         default=[1280, 720],
         nargs=2,
         type=int
@@ -101,18 +102,18 @@ def parse_arguments() -> argparse.Namespace:
 
 def main():
     args = parse_arguments()
-    frame_width, frame_height = args.webcam_resolution
+    frame_width, frame_height = args.res
 
-    cap = cv2.VideoCapture(1)
+    cap = cv2.VideoCapture(0)
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, frame_width)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, frame_height)
 
-    OSC_IP = "10.0.0.32"
+    OSC_IP = "192.168.168.111"
     OSC_PORT = 12345
     osc_client = udp_client.SimpleUDPClient(OSC_IP, OSC_PORT)
 
-    model = YOLO("./model/yolov8l.pt")
-    model.to('mps')
+    model = YOLO("./model/yolov8n.pt")
+    model.to('cuda:0')
 
     tracker = sv.ByteTrack()
 
@@ -178,7 +179,7 @@ def main():
             frame, verbose=True, agnostic_nms=True, classes=0,
             conf=0.3, iou=0.7
         )[0]
-        detections = sv.Detections.from_yolov8(results)
+        detections = sv.Detections.from_ultralytics(results)
         detections.class_id = np.zeros(len(detections))
         detections = tracker.update_with_detections(detections)
 
@@ -190,9 +191,10 @@ def main():
                 detections=detections)]
             print(f'Zone in: {detections_in_zone.tracker_id}')
 
-            if detections_in_zone.tracker_id:
-                osc_client.send_message(
-                    "/erase", 1)
+            # if detections_in_zone.tracker_id:
+            #     print(f'get id')
+            #     # osc_client.send_message(
+            #     #     "/erase", 1)
 
             detections_in_zones.append(detections_in_zone)
 
@@ -200,7 +202,8 @@ def main():
                 detections=detections)]
             print(f'Zone out: {detections_out_zone.tracker_id}')
 
-            if detections_out_zone.tracker_id:
+            if detections_out_zone:
+                print(f'get id')
                 osc_client.send_message(
                     "/erase", 1)
 
